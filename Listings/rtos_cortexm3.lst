@@ -1,0 +1,460 @@
+
+
+
+ARM Macro Assembler    Page 1 
+
+
+    1 00000000                 IMPORT           RTOS_IS_FIRST_SCHEDULE_ADDR
+    2 00000000                 IMPORT           RTOS_CURRENT_THREAD_SP_ADDR
+    3 00000000                 IMPORT           RTOS_NEXT_THREAD_SP_ADDR
+    4 00000000                 IMPORT           RTOS_CURRENT_THREAED_ADDR
+    5 00000000                 IMPORT           RTOS_NEXT_THREAD_ADDR
+    6 00000000         
+    7 00000000 E000ED04 
+                       RTOS_ICSR
+                               EQU              0xE000ED04  ;中断控制及状
+                                                            态寄存器地址
+    8 00000000 E000ED20 
+                       RTOS_SYSEPR3
+                               EQU              0xE000ED20  ;系统异常优先
+                                                            级寄存器阵列�
+                                                            ��，PendSV优先�
+                                                            �所在字的地址
+                                                            
+    9 00000000 00FF0000 
+                       RTOS_PENDSV_PRI
+                               EQU              0x00FF0000  ;PendSV优先级（
+                                                            最低）
+   10 00000000 10000000 
+                       RTOS_PENDSV_SET
+                               EQU              0x10000000  ;触发PendSV中断
+                                                            的值
+   11 00000000 E000E010 
+                       RTOS_SYSTICK_CTRL
+                               EQU              0xE000E010  ;SysTick控制寄�
+                                                            �器地址
+   12 00000000         
+   13 00000000         
+   14 00000000                 AREA             |.text|, CODE, READONLY
+   15 00000000         
+   16 00000000         
+   17 00000000         
+   18 00000000         ;第一次调度
+   19 00000000         RTOS_FirstSchedule
+                               PROC
+   20 00000000         
+   21 00000000                 EXPORT           RTOS_FirstSchedule
+   22 00000000         
+   23 00000000 B672            CPSID            I
+   24 00000002 B671            CPSID            F
+   25 00000004         
+   26 00000004         ;设置中断优先级屏蔽为0，即不屏蔽任何中
+                       断
+   27 00000004 F04F 0000       MOV              R0, #0
+   28 00000008 F380 8811       MSR              BASEPRI, R0
+   29 0000000C         
+   30 0000000C         ;设置PendSV中断优先级为0xFF（即最低一级）
+                       
+   31 0000000C 482A            LDR              R0, =RTOS_SYSEPR3
+   32 0000000E F44F 017F       LDR              R1, =RTOS_PENDSV_PRI
+   33 00000012 F8D0 2000       LDR.W            R2, [R0]
+   34 00000016 EA41 0102       ORR              R1, R1, R2
+   35 0000001A 6001            STR              R1, [R0]
+   36 0000001C         
+   37 0000001C         ;触发PendSV中断
+   38 0000001C 4827            LDR              R0, =RTOS_ICSR
+
+
+
+ARM Macro Assembler    Page 2 
+
+
+   39 0000001E F04F 5180       LDR              R1, =RTOS_PENDSV_SET
+   40 00000022 F8D0 2000       LDR.W            R2, [R0]
+   41 00000026 EA41 0102       ORR              R1, R1, R2
+   42 0000002A 6001            STR              R1, [R0]
+   43 0000002C         
+   44 0000002C         ;使能SysTick
+   45 0000002C 4824            LDR              R0, =RTOS_SYSTICK_CTRL
+   46 0000002E 6801            LDR              R1, [R0]
+   47 00000030 F041 0101       ORR              R1, R1, #0x01
+   48 00000034 6001            STR              R1, [R0]
+   49 00000036         
+   50 00000036 B662            CPSIE            I
+   51 00000038 B661            CPSIE            F
+   52 0000003A         
+   53 0000003A 4770            BX               LR
+   54 0000003C         
+   55 0000003C                 ENDP
+   56 0000003C         
+   57 0000003C         
+   58 0000003C         
+   59 0000003C         RTOS_NormalSchedule
+                               PROC
+   60 0000003C         
+   61 0000003C                 EXPORT           RTOS_NormalSchedule
+   62 0000003C         
+   63 0000003C         ;触发PendSV中断
+   64 0000003C 481F            LDR              R0, =RTOS_ICSR
+   65 0000003E F04F 5180       LDR              R1, =RTOS_PENDSV_SET
+   66 00000042 F8D0 2000       LDR.W            R2, [R0]
+   67 00000046 EA41 0102       ORR              R1, R1, R2
+   68 0000004A 6001            STR              R1, [R0]
+   69 0000004C         
+   70 0000004C         ;打开系统中断
+   71 0000004C F04F 0000       MOV              R0, #0
+   72 00000050 F380 8811       MSR              BASEPRI, R0
+   73 00000054         
+   74 00000054 4770            BX               LR
+   75 00000056         
+   76 00000056                 ENDP
+   77 00000056         
+   78 00000056         
+   79 00000056         
+   80 00000056         
+   81 00000056         
+   82 00000056         
+   83 00000056         
+   84 00000056         PendSV_Handler
+                               PROC
+   85 00000056         
+   86 00000056                 EXPORT           PendSV_Handler
+   87 00000056         
+   88 00000056 B672            CPSID            I
+   89 00000058         
+   90 00000058         ;如果是第一次调度，直接跳转到RECOVER_NEXT_
+                       THREAD_SETTING，
+   91 00000058         ;即不需要保存现场，直接跳转到第一个线�
+                       ��执行。
+   92 00000058 481A            LDR              R0, =RTOS_IS_FIRST_SCHEDULE_ADD
+R
+
+
+
+ARM Macro Assembler    Page 3 
+
+
+   93 0000005A 6800            LDR              R0, [R0]
+   94 0000005C F010 0F01       TST              R0, #0x01
+   95 00000060 D106            BNE              RECOVER_NEXT_THREAD_SETTING
+   96 00000062         
+   97 00000062         ;中断产生会自动入栈部分寄存器，需要手�
+                       ��入栈其他寄存器
+   98 00000062         SAVE_CURRENT_THREAD_SETTING
+   99 00000062 F3EF 8009       MRS              R0, PSP
+  100 00000066 E920 0FF0       STMDB            R0!, {R4 - R11}
+  101 0000006A 4917            LDR              R1, =RTOS_CURRENT_THREAD_SP_ADD
+R
+  102 0000006C 6809            LDR              R1, [R1]
+  103 0000006E 6008            STR              R0, [R1]
+  104 00000070         
+  105 00000070         ;恢复现场即把需要手动入栈的寄存器手动�
+                       ��复，剩余的寄存器值中断结束后自动出栈
+                       
+  106 00000070         RECOVER_NEXT_THREAD_SETTING
+  107 00000070 4816            LDR              R0, =RTOS_NEXT_THREAD_SP_ADDR
+  108 00000072 6800            LDR              R0, [R0]
+  109 00000074 6800            LDR              R0, [R0]
+  110 00000076 E8B0 0FF0       LDMIA            R0!, {R4 - R11}
+  111 0000007A F380 8809       MSR              PSP, R0
+  112 0000007E         
+  113 0000007E         ;更换当前线程地址
+  114 0000007E 4814            LDR              R0, =RTOS_CURRENT_THREAED_ADDR
+  115 00000080 4914            LDR              R1, =RTOS_NEXT_THREAD_ADDR
+  116 00000082 6809            LDR              R1, [R1]
+  117 00000084 6001            STR              R1, [R0]
+  118 00000086 4810            LDR              R0, =RTOS_CURRENT_THREAD_SP_ADD
+R
+  119 00000088 4910            LDR              R1, =RTOS_NEXT_THREAD_SP_ADDR
+  120 0000008A 6809            LDR              R1, [R1]
+  121 0000008C 6001            STR              R1, [R0]
+  122 0000008E         
+  123 0000008E B662            CPSIE            I
+  124 00000090         
+  125 00000090         ;LR位2置1表示中断结束后使用PSP
+  126 00000090 F04E 0E04       ORR              LR, LR, #0x04
+  127 00000094 4770            BX               LR
+  128 00000096         
+  129 00000096                 ENDP
+  130 00000096         
+  131 00000096         
+  132 00000096         
+  133 00000096         
+  134 00000096         
+  135 00000096         
+  136 00000096         
+  137 00000096         RTOS_CloseAllInterrupt
+                               PROC
+  138 00000096         
+  139 00000096                 EXPORT           RTOS_CloseAllInterrupt
+  140 00000096         
+  141 00000096 B672            CPSID            I
+  142 00000098 B671            CPSID            F
+  143 0000009A         
+  144 0000009A 4770            BX               LR
+  145 0000009C         
+
+
+
+ARM Macro Assembler    Page 4 
+
+
+  146 0000009C                 ENDP
+  147 0000009C         
+  148 0000009C         
+  149 0000009C         RTOS_OpenAllInterrupt
+                               PROC
+  150 0000009C         
+  151 0000009C                 EXPORT           RTOS_OpenAllInterrupt
+  152 0000009C         
+  153 0000009C B662            CPSIE            I
+  154 0000009E B661            CPSIE            F
+  155 000000A0         
+  156 000000A0 4770            BX               LR
+  157 000000A2         
+  158 000000A2                 ENDP
+  159 000000A2         
+  160 000000A2         
+  161 000000A2         
+  162 000000A2         
+  163 000000A2         RTOS_CloseSystemInterrupt
+                               PROC
+  164 000000A2         
+  165 000000A2                 EXPORT           RTOS_CloseSystemInterrupt
+  166 000000A2         
+  167 000000A2 F04F 00FF       MOV              R0, #0xFF
+  168 000000A6 F380 8811       MSR              BASEPRI, R0
+  169 000000AA         
+  170 000000AA 4770            BX               LR
+  171 000000AC         
+  172 000000AC                 ENDP
+  173 000000AC         
+  174 000000AC         
+  175 000000AC         RTOS_OpenSystemInterrupt
+                               PROC
+  176 000000AC         
+  177 000000AC                 EXPORT           RTOS_OpenSystemInterrupt
+  178 000000AC         
+  179 000000AC F04F 0000       MOV              R0, #0
+  180 000000B0 F380 8811       MSR              BASEPRI, R0
+  181 000000B4         
+  182 000000B4 4770            BX               LR
+  183 000000B6         
+  184 000000B6                 ENDP
+  185 000000B6         
+  186 000000B6         
+  187 000000B6         
+  188 000000B6         
+  189 000000B6 00 00           ALIGN            4
+  190 000000B8                 END
+              E000ED20 
+              E000ED04 
+              E000E010 
+              00000000 
+              00000000 
+              00000000 
+              00000000 
+              00000000 
+Command Line: --debug --xref --diag_suppress=9931 --cpu=Cortex-M3 --apcs=interw
+ork --depend=.\objects\rtos_cortexm3.d -o.\objects\rtos_cortexm3.o -I.\RTE\_Tar
+get_1 -ID:\Keil5\ARM\PACK\Keil\STM32F1xx_DFP\2.2.0\Device\Include -ID:\Keil5\AR
+
+
+
+ARM Macro Assembler    Page 5 
+
+
+M\CMSIS\Include --predefine="__UVISION_VERSION SETA 524" --predefine="STM32F10X
+_MD SETA 1" --list=.\listings\rtos_cortexm3.lst RTOS\RTOS_CortexM3.s
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Relocatable symbols
+
+.text 00000000
+
+Symbol: .text
+   Definitions
+      At line 14 in file RTOS\RTOS_CortexM3.s
+   Uses
+      None
+Comment: .text unused
+PendSV_Handler 00000056
+
+Symbol: PendSV_Handler
+   Definitions
+      At line 84 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 86 in file RTOS\RTOS_CortexM3.s
+Comment: PendSV_Handler used once
+RECOVER_NEXT_THREAD_SETTING 00000070
+
+Symbol: RECOVER_NEXT_THREAD_SETTING
+   Definitions
+      At line 106 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 95 in file RTOS\RTOS_CortexM3.s
+Comment: RECOVER_NEXT_THREAD_SETTING used once
+RTOS_CloseAllInterrupt 00000096
+
+Symbol: RTOS_CloseAllInterrupt
+   Definitions
+      At line 137 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 139 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_CloseAllInterrupt used once
+RTOS_CloseSystemInterrupt 000000A2
+
+Symbol: RTOS_CloseSystemInterrupt
+   Definitions
+      At line 163 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 165 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_CloseSystemInterrupt used once
+RTOS_FirstSchedule 00000000
+
+Symbol: RTOS_FirstSchedule
+   Definitions
+      At line 19 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 21 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_FirstSchedule used once
+RTOS_NormalSchedule 0000003C
+
+Symbol: RTOS_NormalSchedule
+   Definitions
+      At line 59 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 61 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_NormalSchedule used once
+RTOS_OpenAllInterrupt 0000009C
+
+Symbol: RTOS_OpenAllInterrupt
+
+
+
+ARM Macro Assembler    Page 2 Alphabetic symbol ordering
+Relocatable symbols
+
+   Definitions
+      At line 149 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 151 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_OpenAllInterrupt used once
+RTOS_OpenSystemInterrupt 000000AC
+
+Symbol: RTOS_OpenSystemInterrupt
+   Definitions
+      At line 175 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 177 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_OpenSystemInterrupt used once
+SAVE_CURRENT_THREAD_SETTING 00000062
+
+Symbol: SAVE_CURRENT_THREAD_SETTING
+   Definitions
+      At line 98 in file RTOS\RTOS_CortexM3.s
+   Uses
+      None
+Comment: SAVE_CURRENT_THREAD_SETTING unused
+10 symbols
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Absolute symbols
+
+RTOS_ICSR E000ED04
+
+Symbol: RTOS_ICSR
+   Definitions
+      At line 7 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 38 in file RTOS\RTOS_CortexM3.s
+      At line 64 in file RTOS\RTOS_CortexM3.s
+
+RTOS_PENDSV_PRI 00FF0000
+
+Symbol: RTOS_PENDSV_PRI
+   Definitions
+      At line 9 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 32 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_PENDSV_PRI used once
+RTOS_PENDSV_SET 10000000
+
+Symbol: RTOS_PENDSV_SET
+   Definitions
+      At line 10 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 39 in file RTOS\RTOS_CortexM3.s
+      At line 65 in file RTOS\RTOS_CortexM3.s
+
+RTOS_SYSEPR3 E000ED20
+
+Symbol: RTOS_SYSEPR3
+   Definitions
+      At line 8 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 31 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_SYSEPR3 used once
+RTOS_SYSTICK_CTRL E000E010
+
+Symbol: RTOS_SYSTICK_CTRL
+   Definitions
+      At line 11 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 45 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_SYSTICK_CTRL used once
+5 symbols
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+External symbols
+
+RTOS_CURRENT_THREAD_SP_ADDR 00000000
+
+Symbol: RTOS_CURRENT_THREAD_SP_ADDR
+   Definitions
+      At line 2 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 101 in file RTOS\RTOS_CortexM3.s
+      At line 118 in file RTOS\RTOS_CortexM3.s
+
+RTOS_CURRENT_THREAED_ADDR 00000000
+
+Symbol: RTOS_CURRENT_THREAED_ADDR
+   Definitions
+      At line 4 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 114 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_CURRENT_THREAED_ADDR used once
+RTOS_IS_FIRST_SCHEDULE_ADDR 00000000
+
+Symbol: RTOS_IS_FIRST_SCHEDULE_ADDR
+   Definitions
+      At line 1 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 92 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_IS_FIRST_SCHEDULE_ADDR used once
+RTOS_NEXT_THREAD_ADDR 00000000
+
+Symbol: RTOS_NEXT_THREAD_ADDR
+   Definitions
+      At line 5 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 115 in file RTOS\RTOS_CortexM3.s
+Comment: RTOS_NEXT_THREAD_ADDR used once
+RTOS_NEXT_THREAD_SP_ADDR 00000000
+
+Symbol: RTOS_NEXT_THREAD_SP_ADDR
+   Definitions
+      At line 3 in file RTOS\RTOS_CortexM3.s
+   Uses
+      At line 107 in file RTOS\RTOS_CortexM3.s
+      At line 119 in file RTOS\RTOS_CortexM3.s
+
+5 symbols
+354 symbols in table
